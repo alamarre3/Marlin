@@ -242,12 +242,13 @@ millis_t max_inactive_time, // = 0
  * ******************************** FUNCTIONS ********************************
  * ***************************************************************************
  */
-
+#if HAS_KILL
 void setup_killpin() {
-  #if HAS_KILL
+  
     SET_INPUT_PULLUP(KILL_PIN);
-  #endif
-}
+    }
+ #endif
+
 
 void setup_powerhold() {
   #if HAS_SUICIDE
@@ -888,7 +889,7 @@ void setup() {
     recovery.setup();
   #endif
 
-  setup_killpin();
+
 
   #if HAS_TMC220x
     tmc_serial_begin();

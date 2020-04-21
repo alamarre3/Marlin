@@ -54,6 +54,10 @@
 #define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
 #include "../../core/debug_out.h"
 
+
+
+
+
 #if ENABLED(QUICK_HOME)
 
   static void quick_home_xy() {
@@ -126,6 +130,7 @@
      */
     destination.set(safe_homing_xy, current_position.z);
 
+  
     #if HOMING_Z_WITH_PROBE
       destination -= probe.offset_xy;
     #endif
@@ -182,6 +187,62 @@
   }
 
 #endif // IMPROVE_HOMING_RELIABILITY
+
+#define HAS_CURRENT_HOME(N) (defined(N##_CURRENT_HOME) && N##_CURRENT_HOME != N##_CURRENT)
+  #define HAS_HOMING_CURRENT (HAS_CURRENT_HOME(X) || HAS_CURRENT_HOME(X2) || HAS_CURRENT_HOME(Y) || HAS_CURRENT_HOME(Y2))
+  #if HAS_HOMING_CURRENT
+  
+   void SetHomingCurrent(std::vector<int16_t>* tmc_save_current);
+   void SetNormalCurrent(std::vector<int16_t>* tmc_save_current);
+
+void SetHomingCurrent(std::vector<int16_t>* tmc_save_current){
+
+auto debug_current = [](PGM_P const s, const int16_t a, const int16_t b){
+      serialprintPGM(s); DEBUG_ECHOLNPAIR(" current: ", a, " -> ", b);
+    };
+    #if HAS_CURRENT_HOME(X)
+      tmc_save_current->push_back (stepperX.getMilliamps());
+      stepperX.rms_current(X_CURRENT_HOME);
+      if (DEBUGGING(LEVELING)) debug_current(PSTR("X"), tmc_save_current->back(), X_CURRENT_HOME);
+    #endif
+    #if HAS_CURRENT_HOME(X2)
+      tmc_save_current->push_back (stepperX2.getMilliamps());
+      stepperX2.rms_current(X2_CURRENT_HOME);
+      if (DEBUGGING(LEVELING)) debug_current(PSTR("X2"), tmc_save_current->back(), X2_CURRENT_HOME);
+    #endif
+    #if HAS_CURRENT_HOME(Y)
+      tmc_save_current->push_back(stepperY.getMilliamps());
+      stepperY.rms_current(Y_CURRENT_HOME);
+      if (DEBUGGING(LEVELING)) debug_current(PSTR("Y"), tmc_save_current->back(), Y_CURRENT_HOME);
+    #endif
+    #if HAS_CURRENT_HOME(Y2)
+      tmc_save_current->push_back (stepperY2.getMilliamps());
+      stepperY2.rms_current(Y2_CURRENT_HOME);
+      if (DEBUGGING(LEVELING)) debug_current(PSTR("Y2"), tmc_save_current->(), Y2_CURRENT_HOME);
+    #endif
+}
+void SetNormalCurrent(std::vector<int16_t>* tmc_save_current){
+  byte i{};
+  if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Restore driver current...");
+              #if HAS_CURRENT_HOME(X)
+                stepperX.rms_current(tmc_save_current->at(i));
+                ++i;
+              #endif
+            #if HAS_CURRENT_HOME(X2)
+                stepperX2.rms_current(tmc_save_current->at(i));
+                ++i;
+            #endif
+            #if HAS_CURRENT_HOME(Y)
+               stepperY.rms_current(tmc_save_current->at(i));
+               ++i;
+            #endif
+           #if HAS_CURRENT_HOME(Y2)
+              stepperY2.rms_current(tmc_save_current->at(i));
+              ++i;
+           #endif
+}
+
+#endif
 
 /**
  * G28: Home all axes according to settings
@@ -251,33 +312,10 @@ void GcodeSuite::G28() {
     workspace_plane = PLANE_XY;
   #endif
 
-  #define HAS_CURRENT_HOME(N) (defined(N##_CURRENT_HOME) && N##_CURRENT_HOME != N##_CURRENT)
-  #define HAS_HOMING_CURRENT (HAS_CURRENT_HOME(X) || HAS_CURRENT_HOME(X2) || HAS_CURRENT_HOME(Y) || HAS_CURRENT_HOME(Y2))
-
+  
   #if HAS_HOMING_CURRENT
-    auto debug_current = [](PGM_P const s, const int16_t a, const int16_t b){
-      serialprintPGM(s); DEBUG_ECHOLNPAIR(" current: ", a, " -> ", b);
-    };
-    #if HAS_CURRENT_HOME(X)
-      const int16_t tmc_save_current_X = stepperX.getMilliamps();
-      stepperX.rms_current(X_CURRENT_HOME);
-      if (DEBUGGING(LEVELING)) debug_current(PSTR("X"), tmc_save_current_X, X_CURRENT_HOME);
-    #endif
-    #if HAS_CURRENT_HOME(X2)
-      const int16_t tmc_save_current_X2 = stepperX2.getMilliamps();
-      stepperX2.rms_current(X2_CURRENT_HOME);
-      if (DEBUGGING(LEVELING)) debug_current(PSTR("X2"), tmc_save_current_X2, X2_CURRENT_HOME);
-    #endif
-    #if HAS_CURRENT_HOME(Y)
-      const int16_t tmc_save_current_Y = stepperY.getMilliamps();
-      stepperY.rms_current(Y_CURRENT_HOME);
-      if (DEBUGGING(LEVELING)) debug_current(PSTR("Y"), tmc_save_current_Y, Y_CURRENT_HOME);
-    #endif
-    #if HAS_CURRENT_HOME(Y2)
-      const int16_t tmc_save_current_Y2 = stepperY2.getMilliamps();
-      stepperY2.rms_current(Y2_CURRENT_HOME);
-      if (DEBUGGING(LEVELING)) debug_current(PSTR("Y2"), tmc_save_current_Y2, Y2_CURRENT_HOME);
-    #endif
+   std::vector<int16_t> tmc_save_current{};
+   SetHomingCurrent(&tmc_save_current);
   #endif
 
   #if ENABLED(IMPROVE_HOMING_RELIABILITY)
@@ -385,13 +423,18 @@ void GcodeSuite::G28() {
     #endif
 
     // Home Z last if homing towards the bed
+    
     #if Z_HOME_DIR < 0
+    
 
       if (doZ) {
         #if ENABLED(BLTOUCH)
           bltouch.init();
         #endif
         #if ENABLED(Z_SAFE_HOMING)
+          #if HAS_HOMING_CURRENT
+           SetNormalCurrent(&tmc_save_current);
+          #endif
           home_z_safely();
         #else
           homeaxis(Z_AXIS);
@@ -478,7 +521,7 @@ void GcodeSuite::G28() {
     tool_change(old_tool_index, NONE(PARKING_EXTRUDER, DUAL_X_CARRIAGE));   // Do move if one of these
   #endif
 
-  #if HAS_HOMING_CURRENT
+ #if HAS_HOMING_CURRENT && !ENABLED(Z_SAFE_HOMING)
     if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Restore driver current...");
     #if HAS_CURRENT_HOME(X)
       stepperX.rms_current(tmc_save_current_X);
@@ -518,3 +561,4 @@ void GcodeSuite::G28() {
     }
   #endif
 }
+
